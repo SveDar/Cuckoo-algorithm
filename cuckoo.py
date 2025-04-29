@@ -1,40 +1,42 @@
+# cuckoo_search_experiments.py
+
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
+import os
+import math
 
-# Benchmark functions
-def sphere(x):
-    return np.sum(x**2)
+from collections import defaultdict
 
-def rastrigin(x):
-    return 10 * len(x) + np.sum(x**2 - 10 * np.cos(2 * np.pi * x))
-
+# Define benchmark functions
+def sphere(x): return np.sum(x**2)
+def rastrigin(x): return 10 * len(x) + np.sum(x**2 - 10 * np.cos(2 * np.pi * x))
 def ackley(x):
     d = len(x)
     sum1 = np.sum(x**2)
     sum2 = np.sum(np.cos(2 * np.pi * x))
     return -20 * np.exp(-0.2 * np.sqrt(sum1 / d)) - np.exp(sum2 / d) + 20 + np.e
+def rosenbrock(x): return np.sum(100 * (x[1:] - x[:-1]**2)**2 + (x[:-1] - 1)**2)
 
-def rosenbrock(x):
-    return np.sum(100 * (x[1:] - x[:-1]**2)**2 + (x[:-1] - 1)**2)
-
-# Lévy flight function
+# Lévy flight step
 def levy_flight(Lambda):
-    sigma = (np.math.gamma(1 + Lambda) * np.sin(np.pi * Lambda / 2) / 
-            (np.math.gamma((1 + Lambda) / 2) * Lambda * 2**((Lambda - 1) / 2)))**(1 / Lambda)
-    u = np.random.randn() * sigma
+    sigma = (math.gamma(1 + Lambda) * np.sin(np.pi * Lambda / 2) /
+             (math.gamma((1 + Lambda) / 2) * Lambda * 2 ** ((Lambda - 1) / 2))) ** (1 / Lambda)
+    u = np.random.randn()
     v = np.random.randn()
-    step = u / abs(v)**(1 / Lambda)
+    step = u * sigma / abs(v) ** (1 / Lambda)
     return step
 
-# Cuckoo Search core
-def cuckoo_search(obj_func, n=15, d=2, pa=0.25, n_iter=100):
+
+# Cuckoo Search Algorithm
+def cuckoo_search(obj_func, n=20, d=10, pa=0.25, n_iter=500):
     nests = np.random.uniform(-5, 5, (n, d))
     fitness = np.apply_along_axis(obj_func, 1, nests)
     best = nests[np.argmin(fitness)]
     best_fitness = np.min(fitness)
     history = [best_fitness]
 
-    for t in range(n_iter):
+    for _ in range(n_iter):
         new_nests = np.copy(nests)
         for i in range(n):
             step_size = levy_flight(1.5)
@@ -56,7 +58,7 @@ def cuckoo_search(obj_func, n=15, d=2, pa=0.25, n_iter=100):
 
     return best, best_fitness, history
 
-# Run and compare on all benchmark functions
+# Run experiments
 functions = {
     "Sphere": sphere,
     "Rastrigin": rastrigin,
@@ -64,21 +66,56 @@ functions = {
     "Rosenbrock": rosenbrock
 }
 
-plt.figure(figsize=(10, 6))
-dim = 10  # Increase dimension for complexity
+results = []
+for dim in [10, 30]:
+    for name, func in functions.items():
+        print(f"Running {name} Function in {dim}D...")
+        best_sol, best_val, history = cuckoo_search(func, d=dim, n_iter=500)
+        result = {
+            "Function": name,
+            "Dimension": dim,
+            "Best Fitness": best_val,
+            "Best Solution": best_sol.tolist(),
+            "History": history
+        }
+        results.append(result)
 
-for name, func in functions.items():
-    best_sol, best_val, history = cuckoo_search(func, d=dim, n_iter=200)
-    print(f"{name} Function:")
-    print(f"  Best solution: {np.round(best_sol, 4)}")
-    print(f"  Best fitness: {best_val:.6f}\n")
-    plt.plot(history, label=name)
+# Save CSV
+rows = []
+for r in results:
+    row = {
+        "Function": r["Function"],
+        "Dimension": r["Dimension"],
+        "Best Fitness": r["Best Fitness"],
+        "Best Solution": r["Best Solution"]
+    }
+    history = {f"history_{i}": val for i, val in enumerate(r["History"])}
+    row.update(history)
+    rows.append(row)
 
-plt.title("Cuckoo Search Convergence on Benchmark Functions")
-plt.xlabel("Iteration")
-plt.ylabel("Best Fitness")
-plt.yscale('log')
-plt.legend()
-plt.grid()
-plt.tight_layout()
-plt.show()
+df = pd.DataFrame(rows)
+df.to_csv("cuckoo_search_results.csv", index=False)
+print("✅ Results saved to 'cuckoo_search_results.csv'")
+
+# Plot comparison figures
+os.makedirs("plots", exist_ok=True)
+func_results = defaultdict(dict)
+for r in results:
+    func_results[r["Function"]][r["Dimension"]] = r["History"]
+
+for func_name, histories in func_results.items():
+    plt.figure(figsize=(8, 5))
+    for dim, hist in histories.items():
+        plt.plot(hist, label=f"{dim}D")
+    plt.title(f"Cuckoo Search Convergence: {func_name}")
+    plt.xlabel("Iteration")
+    plt.ylabel("Best Fitness")
+    plt.yscale("log")
+    plt.legend()
+    plt.grid()
+    filename = f"plots/{func_name}_comparison.png"
+    plt.tight_layout()
+    plt.savefig(filename)
+    plt.close()
+
+print("✅ Comparison plots saved to 'plots/' directory.")
